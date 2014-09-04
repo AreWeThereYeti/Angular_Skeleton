@@ -1,17 +1,6 @@
-## Example Boilerplate
+# Angular Boilerplate
 
-This is an example Boilerplate for using Angular, Gulp, Browserify and a local webserver with LiveReload.
+Basic setup for starting an angular based web application
+ 
+Run **'gulp'** in terminal to get up an running on **localhost:3000**. See Gulp file for specifications.
 
-It's part of the blog post at http://mindthecode.com/lets-build-an-angularjs-app-with-browserify-and-gulp
-
-## Installation
-
-    git clone https://github.com/Hyra/angular-gulp-browserify-livereload-boilerplate/ example-app
-
-    cd example-app
-
-    npm install
-
-    gulp dev
-
-    

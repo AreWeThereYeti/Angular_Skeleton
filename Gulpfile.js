@@ -1,107 +1,117 @@
-'use strict';
-
 var gulp = require('gulp'),
-    jshint = require('gulp-jshint'),
-    browserify = require('gulp-browserify'),
-    concat = require('gulp-concat'),
-    rimraf = require('gulp-rimraf'),
-    sass = require('gulp-sass'),
-    autoprefixer = require('gulp-autoprefixer');
+		uglify = require('gulp-uglify'),
+		express = require('express'),
+		cssmin = require('gulp-cssmin'),
+		path = require('path'),
+		gutil = require('gulp-util'),
+		concat = require('gulp-concat'),
+		rename    = require('gulp-rename'),
+		watch = require('gulp-watch'),
+		ngAnnotate = require('gulp-ng-annotate'),
+		clean = require('gulp-clean'),
+		minifyHTML = require('gulp-minify-html'),
+		imagemin = require('gulp-imagemin'),
+		pngcrush = require('imagemin-pngcrush');
 
-// Modules for webserver and livereload
-var express = require('express'),
-    refresh = require('gulp-livereload'),
-    livereload = require('connect-livereload'),
-    livereloadport = 35729,
-    serverport = 5000;
+var EXPRESS_PORT = 3000;
+var EXPRESS_ROOT = __dirname + '/app';
+var LIVERELOAD_PORT = 35729;
+var lr;
 
-// Set up an express server (not starting it yet)
-var server = express();
-// Add live reload
-server.use(livereload({port: livereloadport}));
-// Use our 'dist' folder as rootfolder
-server.use(express.static('./dist'));
-// Because I like HTML5 pushstate .. this redirects everything back to our index.html
-server.all('/*', function(req, res) {
-  res.sendfile('index.html', { root: 'dist' });
+//------- Start live-reload and webserver-----------------------
+function startExpress() {
+	var app = express();
+	app.use(require('connect-livereload')());
+	app.use(express.static(EXPRESS_ROOT));
+	app.listen(EXPRESS_PORT);
+}
+
+//Livereload
+function startLivereload() {
+	lr = require('tiny-lr')();
+	lr.listen(LIVERELOAD_PORT);
+}
+
+function notifyLivereload(event) {
+	// `gulp.watch()` events provide an absolute path
+	// so we need to make it relative to the server root
+	var fileName = require('path').relative(EXPRESS_ROOT, event.path);
+	lr.changed({
+		body: {
+			files: [fileName]
+		}
+	});
+}
+//----------- End of livereload and webserver-------------------
+
+//Clean tmp folder after tasks
+gulp.task('clean', function () {
+	return gulp.src('.tmp/', {read: false})
+			.pipe(clean());
 });
 
-// Dev task
-gulp.task('dev', ['clean', 'views', 'styles', 'lint', 'browserify'], function() { });
-
-// Clean task
-gulp.task('clean', function() {
-	gulp.src('./dist/views', { read: false }) // much faster
-  .pipe(rimraf({force: true}));
+//optimize images and move to dist folder.
+gulp.task('images', function () {
+	//source
+	return gulp.src('app/images/*')
+		//optimization process
+			.pipe(imagemin({
+				progressive: true,
+				svgoPlugins: [{removeViewBox: false}],
+				use: [pngcrush()]
+			}))
+		//Destination
+			.pipe(gulp.dest('dist/images'));
 });
 
-// JSHint task
-gulp.task('lint', function() {
-  gulp.src('app/scripts/*.js')
-  .pipe(jshint())
-  .pipe(jshint.reporter('default'));
+//Move html and minify
+gulp.task('minify-html', function() {
+	var opts = {comments:true,spare:true};
+	gulp.src('./app/*.html')
+			.pipe(minifyHTML({
+				empty:true
+			}))
+			.pipe(gulp.dest('./dist/'))
 });
 
-// Styles task
-gulp.task('styles', function() {
-  gulp.src('app/styles/*.scss')
-  // The onerror handler prevents Gulp from crashing when you make a mistake in your SASS
-  .pipe(sass({onError: function(e) { console.log(e); } }))
-  // Optionally add autoprefixer
-  .pipe(autoprefixer('last 2 versions', '> 1%', 'ie 8'))
-  // These last two should look familiar now :)
-  .pipe(gulp.dest('dist/css/'));
+//Minify js and move to dist
+gulp.task('minify', function () {
+	gulp.src('app/scripts/**/*.js')
+			.pipe(ngAnnotate())
+			.pipe(uglify('app.js', {
+				mangle: false,
+				output: {
+					beautify: true
+				}
+			}))
+			.pipe(gulp.dest('./dist/scripts'))
 });
 
-// Browserify task
-gulp.task('browserify', function() {
-  // Single point of entry (make sure not to src ALL your files, browserify will figure it out)
-  gulp.src(['app/scripts/main.js'])
-  .pipe(browserify({
-    insertGlobals: true,
-    debug: false
-  }))
-  // Bundle to a single file
-  .pipe(concat('bundle.js'))
-  // Output it to our dist folder
-  .pipe(gulp.dest('dist/js'));
+//Move html and minify
+gulp.task('minify-template-html', function() {
+	var opts = {comments:true,spare:true};
+	gulp.src('./app/html/**/*.html')
+			.pipe(minifyHTML({
+				empty:true
+			}))
+			.pipe(gulp.dest('./dist/html'))
 });
 
-// Views task
-gulp.task('views', function() {
-  // Get our index.html
-  gulp.src('app/index.html')
-  // And put it in the dist folder
-  .pipe(gulp.dest('dist/'));
-
-  // Any other view files from app/views
-  gulp.src('app/views/**/*')
-  // Will be put in the dist/views folder
-  .pipe(gulp.dest('dist/views/'));
+gulp.task('css', function () {
+	gulp.src('app/stylesheets/**/*.css')
+			.pipe(cssmin())
+			.pipe(concat('main.css'))
+			.pipe(rename({suffix: '.min'}))
+			.pipe(gulp.dest('dist/stylesheets'));
 });
 
-gulp.task('watch', ['lint'], function() {
-  // Start webserver
-  server.listen(serverport);
-  // Start live reload
-  refresh.listen(livereloadport);
-
-  // Watch our scripts, and when they change run lint and browserify
-  gulp.watch(['app/scripts/*.js', 'app/scripts/**/*.js'],[
-    'lint',
-    'browserify'
-  ]);
-  // Watch our sass files
-  gulp.watch(['app/styles/**/*.scss'], [
-    'styles'
-  ]);
-
-  gulp.watch(['app/**/*.html'], [
-    'views'
-  ]);
-
-  gulp.watch('./dist/**').on('change', refresh.changed);
-
+//Start webserver on localhost /localhost:3000
+gulp.task('default', function() {
+	startExpress();
+	startLivereload();
+	gulp.watch('app/**').on('change', notifyLivereload);
 });
 
-gulp.task('default', ['dev', 'watch']);
+gulp.task('build', ['minify', 'css', 'minify-template-html' ]);
+
+gulp.task('minify-images', ['images']);
